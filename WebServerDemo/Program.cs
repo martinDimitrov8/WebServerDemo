@@ -1,36 +1,77 @@
-﻿using System.Net;
-using System.Net.Sockets;
-using System.Text;
+﻿using System.Net.Http;
+using System.Linq;
+using System.IO;
+using System.Threading.Tasks;
 
-namespace WebServerDemo
+class Startup
 {
-    internal class Program
+    private const string HtmlForm = @"<form action='/HTML' method='POST'>
+Name: <input type='text' name='Name'/>
+Age: <input type='number' name='Age'/>
+<input type='submit' value='Save'/>
+</form>";
+private const string DownloadForm = @"<form action='/Content' method='POST'>
+<input type='submit' value ='Download Sites Content'/>
+</form>";
+    static async Task Main()
     {
-        static void Main(string[] args)
+        
+        const string fileName = "content.txt";
+
+        await DownloadSitesAsTextFile(
+            fileName,
+            new[]
+            {
+        "https://judge.softuni.org/",
+        "https://softuni.org/"
+            });
+        var server = new HttpServer(routes =>
         {
-            var ipAdrress = IPAddress.Parse("127.0.0.1");
-            int port = 8080;
+            routes
+                .MapGet("/", new TextResponse("Home Page"))
+                .MapGet("/HTML", new HtmlResponse(HtmlForm))
+                .MapPost("/HTML", new TextResponse("", AddFormDataAction))
+                .MapGet("/Redirect", new RedirectResponse("https://softuni.org/"))
+                .MapGet("/Content", new HtmlResponse(DownloadForm))
+                .MapPost("/Content", new TextFileResponse(fileName));
+        });
 
-            var serverListener = new TcpListener(ipAdrress,port);
-            serverListener.Start();
+        await server.StartAsync();
+    }
 
-            Console.WriteLine($"Server started on port {port}");
-            Console.WriteLine("Listening for request...");
-            var connection = serverListener.AcceptTcpClient();
-            var networkStream = connection.GetStream();
+    private static void AddFormDataAction(Request request, Response response)
+    {
+        response.Body = "";
 
-            var content = "Hello from my web server";
-            var contentLength = Encoding.UTF8.GetByteCount(content);
-
-            var response = $@"HTTP/1.1 200 OK
-Content-Type: text/plain
-Conetnt-Length: {contentLength}
-
-{content}";
-
-            byte[] responseBytes = Encoding.UTF8.GetBytes(content);
-            networkStream.Write(responseBytes);
-            connection.Close();
+        foreach (var (key, value) in request.FormData)
+        {
+            response.Body += $"{key} = {value}\n";
         }
+    }
+    
+    private static async Task<string>
+DownloadWebsiteContent(string url)
+    {
+        using var client = new HttpClient();
+
+        var response = await client.GetAsync(url);
+        var content = await response.Content.ReadAsStringAsync();
+
+        return content.Substring(0, 2000);
+    }
+
+    private static async Task DownloadSitesAsTextFile(
+    string fileName,
+    string[] urls)
+    {
+        var tasks = urls
+            .Select(DownloadWebsiteContent)
+            .ToArray();
+
+        var results = await Task.WhenAll(tasks);
+
+        var joined = string.Join("\n\n", results);
+
+        await File.WriteAllTextAsync(fileName, joined);
     }
 }

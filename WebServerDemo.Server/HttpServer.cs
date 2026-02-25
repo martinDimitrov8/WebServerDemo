@@ -1,81 +1,82 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.Sockets;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
-using System.Threading.Tasks;
+using BasicWebServer.Server.HTTP;
+using BasicWebServer.Server.Routing;
 
-namespace WebServerDemo.Server
+namespace BasicWebServer.Server
 {
     public class HttpServer
     {
-        private readonly IPAddress ipAddress;
-        private readonly int port;
         private readonly TcpListener listener;
+        private readonly IRoutingTable routingTable;
 
-        public HttpServer(string ipAddress, int port)
+        public HttpServer(
+            string ip,
+            int port,
+            Action<IRoutingTable> routes)
         {
-            this.ipAddress = IPAddress.Parse(ipAddress);
-            this.port = port;
-            this.listener = new TcpListener(this.ipAddress, this.port);
+            listener = new TcpListener(IPAddress.Parse(ip), port);
+            routingTable = new RoutingTable();
+            routes(routingTable);
         }
 
-        public void Start()
+        public HttpServer(Action<IRoutingTable> routes)
+            : this("127.0.0.1", 8080, routes)
+        {
+        }
+
+        public async Task StartAsync()
         {
             listener.Start();
-            Console.WriteLine($"Server started at http://localhost:{port}");
+            Console.WriteLine("Server started...");
 
             while (true)
             {
-                var client = listener.AcceptTcpClient();
-                using var networkStream = client.GetStream();
+                var client = await listener.AcceptTcpClientAsync();
 
-                var requestText = ReadRequest(networkStream);
-                Console.WriteLine(requestText);
+                _ = Task.Run(async () =>
+                {
+                    using var stream = client.GetStream();
 
-                WriteResponse(networkStream, "Hello from the server!");
-                client.Close();
+                    var requestText = await ReadRequestAsync(stream);
+                    var request = Request.Parse(requestText);
+
+                    var response = routingTable.MatchRequest(request);
+
+                    response.PreRenderAction?.Invoke(request, response);
+
+                    await WriteResponseAsync(stream, response);
+
+                    client.Close();
+                });
             }
         }
 
-        private string ReadRequest(NetworkStream networkStream)
+        private async Task<string> ReadRequestAsync(NetworkStream stream)
         {
             var buffer = new byte[1024];
-            var requestBuilder = new StringBuilder();
-            int totalBytes = 0;
+            var builder = new StringBuilder();
+
+            int bytesRead;
 
             do
             {
-                int bytesRead = networkStream.Read(buffer, 0, buffer.Length);
-                totalBytes += bytesRead;
-
-                if (totalBytes > 10_000)
-                {
-                    throw new InvalidOperationException("Request too large");
-                }
-
-                requestBuilder.Append(Encoding.UTF8.GetString(buffer, 0, bytesRead));
+                bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
+                builder.Append(Encoding.UTF8.GetString(buffer, 0, bytesRead));
             }
-            while (networkStream.DataAvailable);
+            while (stream.DataAvailable);
 
-            return requestBuilder.ToString();
+            return builder.ToString();
         }
 
-        private void WriteResponse(NetworkStream networkStream, string message)
+        private async Task WriteResponseAsync(
+     NetworkStream stream,
+     Response response)
         {
-            var body = message;
-            var bodyBytes = Encoding.UTF8.GetBytes(body);
-
-            var response =
-                "HTTP/1.1 200 OK\r\n" +
-                "Content-Type: text/plain; charset=UTF-8\r\n" +
-                $"Content-Length: {bodyBytes.Length}\r\n" +
-                "\r\n" +
-                body;
-
-            var responseBytes = Encoding.UTF8.GetBytes(response);
-            networkStream.Write(responseBytes);
+            var bytes = Encoding.UTF8.GetBytes(response.ToString());
+            await stream.WriteAsync(bytes);
         }
     }
 }

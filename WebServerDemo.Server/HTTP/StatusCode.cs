@@ -6,8 +6,12 @@ using System.Threading.Tasks;
 
 namespace WebServerDemo.Server
 {
-        public enum StatusCode
-        {
-            OK = 200
-        }
+    public enum StatusCode
+    {
+        OK = 200
+            Found = 302,
+        BadRequest = 400,
+        Unauthorized = 401,
+        NotFound = 404
     }
+}
