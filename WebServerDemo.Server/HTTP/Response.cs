@@ -1,6 +1,12 @@
 ﻿public override string ToString()
 {
-    var sb = new StringBuilder();
+    public CookieCollection Cookies { get; }
+Cookies = new CookieCollection();
+foreach (var cookie in Cookies)
+{
+    sb.AppendLine($"{Header.SetCookie}: {cookie}");
+}
+var sb = new StringBuilder();
 
     sb.AppendLine($"HTTP/1.1 {(int)StatusCode} {StatusCode}");
 

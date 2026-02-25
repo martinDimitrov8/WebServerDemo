@@ -11,7 +11,19 @@ namespace BasicWebServer.Server
     {
         private readonly TcpListener listener;
         private readonly IRoutingTable routingTable;
+        AddSession(request, response);
+        private void AddSession(Request request, Response response)
+        {
+            var session = request.Session;
 
+            if (!session.ContainsKey(Session.CurrentDateKey))
+            {
+                session[Session.CurrentDateKey] = DateTime.Now.ToString();
+            }
+
+            response.Cookies.Add(
+                new Cookie(Session.SessionCookieName, session.Id));
+        }
         public HttpServer(
             string ip,
             int port,
